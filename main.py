@@ -6,7 +6,7 @@ Commands:  encrypt | decrypt | verify
 
 import sys
 import getpass
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import click
 
@@ -32,6 +32,25 @@ def _error_cb(path: Path, exc: Exception) -> None:
     click.echo(f"  [SKIP] {path.name}: {exc}", err=True)
 
 
+def _src_to_subdir(src: Path) -> Path:
+    """
+    Map an absolute source path to a safe relative subdirectory name.
+
+    Examples
+    --------
+    Windows  C:\\Users\\Alice    ->  C/Users/Alice
+    Windows  C:\\Work\\Project   ->  C/Work/Project
+    Linux    /home/user/docs    ->  home/user/docs
+    """
+    parts = list(src.resolve().parts)
+    # Strip Windows drive root ("C:\\") -> keep only the letter
+    if parts and len(parts[0]) == 3 and parts[0][1:] == ":\\":
+        parts[0] = parts[0][0]          # "C:\\" -> "C"
+    elif parts and parts[0] == "/":
+        parts = parts[1:]               # strip leading "/"
+    return Path(*parts) if parts else Path(src.name)
+
+
 # ─── CLI ──────────────────────────────────────────────────────────────────────
 
 @click.group()
@@ -40,36 +59,53 @@ def cli() -> None:
 
 
 @cli.command()
-@click.argument("source",      type=click.Path(exists=True, file_okay=False, path_type=Path))
-@click.argument("destination", type=click.Path(path_type=Path))
+@click.argument("sources", nargs=-1, required=True,
+                type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.option("--dest", "-d", required=True, type=click.Path(path_type=Path),
+              help="Backup destination directory.")
 @click.option("--workers", "-w", default=4, show_default=True,
               help="Parallel worker threads.")
 @click.option("--password", "-p", default=None,
               help="Password (omit to be prompted securely).")
-def encrypt(source: Path, destination: Path, workers: int, password: str | None) -> None:
+def encrypt(sources: tuple[Path, ...], dest: Path,
+            workers: int, password: str | None) -> None:
     """
-    Encrypt every file under SOURCE into DESTINATION.
+    Encrypt one or more SOURCE directories into DEST.
 
-    A .vault_session file is created in DESTINATION — keep it together
-    with the encrypted files; it is required for decryption.
+    Each source is mirrored as DEST/<drive>/<path>/ so multiple
+    directories can coexist in the same backup without collision.
+    A .vault_session file is written to DEST — keep it with the backup.
     Original files are never modified.
+
+    \b
+    Examples
+    --------
+    Single directory:
+      python main.py encrypt --dest E:\\Backup\\enc  C:\\Users\\Alice
+
+    Multiple directories in one pass:
+      python main.py encrypt --dest E:\\Backup\\enc  C:\\Users\\Alice  C:\\Work  C:\\ProgramData\\App
     """
     if password is None:
         password = _get_password(confirm=True)
 
     click.echo("Deriving master key (Argon2id, ~1-2 s) …")
-    master = create_session(password, destination)
-
-    click.echo(f"Source      : {source}")
-    click.echo(f"Destination : {destination}")
+    master = create_session(password, dest)
+    click.echo(f"Destination : {dest}")
     click.echo(f"Workers     : {workers}")
     click.echo()
 
-    ok, err = encrypt_directory(source, destination, master, workers, _error_cb)
+    total_ok = total_err = 0
+    for src in sources:
+        sub_dst = dest / _src_to_subdir(src)
+        click.echo(f"  [{sources.index(src)+1}/{len(sources)}] {src}  →  {sub_dst}")
+        ok, err = encrypt_directory(src, sub_dst, master, workers, _error_cb)
+        click.echo(f"        Encrypted: {ok}   Errors: {err}\n")
+        total_ok  += ok
+        total_err += err
 
-    click.echo()
-    click.echo(f"Done.  Encrypted: {ok}   Errors: {err}")
-    if err:
+    click.echo(f"All done.  Total encrypted: {total_ok}   Total errors: {total_err}")
+    if total_err:
         sys.exit(2)
 
 

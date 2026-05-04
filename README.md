@@ -77,10 +77,10 @@ python main.py --help
 
 ## 使用教程
 
-### 场景一：加密备份 C:\Users\Alice 到移动硬盘
+### 场景一：加密备份单个目录
 
 ```cmd
-python main.py encrypt "C:\Users\Alice" "E:\Backup\Alice_encrypted"
+python main.py encrypt --dest "E:\Backup\enc"  "C:\Users\Alice"
 ```
 
 执行后：
@@ -92,39 +92,103 @@ python main.py encrypt "C:\Users\Alice" "E:\Backup\Alice_encrypted"
 **重要**：目标目录会生成 `.vault_session` 文件，这是解密所必需的，**务必保留**。
 
 ```
-E:\Backup\Alice_encrypted\
-├── .vault_session          ← 必须保留！
-├── Desktop\
-│   ├── report.docx.vault
-│   └── photo.jpg.vault
-├── Documents\
-│   └── notes.txt.vault
-└── ...
+E:\Backup\enc\
+├── .vault_session              ← 必须保留！
+└── C\
+    └── Users\
+        └── Alice\
+            ├── Desktop\
+            │   ├── report.docx.vault
+            │   └── photo.jpg.vault
+            └── Documents\
+                └── notes.txt.vault
 ```
 
 每个原始文件对应一个 `.vault` 文件，原始文件**完全不受影响**。
 
 ---
 
-### 场景二：从备份中还原所有文件
+### 场景二：一次性加密多个指定目录
+
+只需在 `--dest` 后面列出所有想要备份的目录，用空格分隔：
 
 ```cmd
-python main.py decrypt "E:\Backup\Alice_encrypted" "E:\Restore\Alice"
+python main.py encrypt --dest "E:\Backup\enc" ^
+    "C:\Users\Alice" ^
+    "C:\Work" ^
+    "C:\ProgramData\MyApp" ^
+    "C:\Program Files\ImportantSoftware"
+```
+
+（`^` 是 Windows cmd 的换行符，也可以写成一行）
+
+备份目录结构会按原始路径自动分层，互不冲突：
+
+```
+E:\Backup\enc\
+├── .vault_session
+└── C\
+    ├── Users\
+    │   └── Alice\
+    │       ├── Desktop\...
+    │       └── Documents\...
+    ├── Work\
+    │   ├── project1\...
+    │   └── project2\...
+    ├── ProgramData\
+    │   └── MyApp\...
+    └── Program Files\
+        └── ImportantSoftware\...
+```
+
+也可以跨盘符同时备份：
+
+```cmd
+python main.py encrypt --dest "E:\Backup\enc" ^
+    "C:\Users\Alice" ^
+    "D:\Projects"
+```
+
+结构变为：
+
+```
+E:\Backup\enc\
+├── .vault_session
+├── C\
+│   └── Users\Alice\...
+└── D\
+    └── Projects\...
+```
+
+---
+
+### 场景三：从备份中还原所有文件
+
+```cmd
+python main.py decrypt "E:\Backup\enc" "E:\Restore"
 ```
 
 执行后：
 1. 提示输入密码
 2. 验证密码正确性（从 `.vault_session` 校验）
-3. 还原所有文件到 `E:\Restore\Alice\`，完整保留目录结构
+3. 还原所有文件到 `E:\Restore\`，完整保留原始目录结构
+
+还原后的结构：
+```
+E:\Restore\
+└── C\
+    ├── Users\Alice\...（与原始 C:\Users\Alice 完全一致）
+    └── Work\...
+```
 
 ---
 
-### 场景三：验证备份完整性（不写磁盘）
+### 场景四：验证备份完整性（不写磁盘）
 
 定期运行此命令确认备份未损坏、未被篡改：
 
 ```cmd
-python main.py verify "E:\Backup\Alice_encrypted"
+python main.py verify "E:\Backup\enc"
 ```
 
 - 如果全部通过：输出 `All N file(s) passed integrity check.`
@@ -132,21 +196,21 @@ python main.py verify "E:\Backup\Alice_encrypted"
 
 ---
 
-### 场景四：指定密码（脚本自动化）
+### 场景五：指定密码（脚本自动化）
 
 ```cmd
-python main.py encrypt "C:\Users\Alice" "E:\Backup\enc" --password "你的强密码"
-python main.py decrypt "E:\Backup\enc" "E:\Restore"    --password "你的强密码"
+python main.py encrypt --dest "E:\Backup\enc" --password "你的强密码"  "C:\Users\Alice"  "C:\Work"
+python main.py decrypt "E:\Backup\enc" "E:\Restore" --password "你的强密码"
 ```
 
 > 警告：命令行密码可能被系统日志记录，建议手动输入。
 
 ---
 
-### 场景五：调整并行线程数（大量文件时加速）
+### 场景六：调整并行线程数（大量文件时加速）
 
 ```cmd
-python main.py encrypt "C:\Users\Alice" "E:\Backup\enc" --workers 8
+python main.py encrypt --dest "E:\Backup\enc" --workers 8  "C:\Users\Alice"  "C:\Work"
 ```
 
 默认4个线程，SSD 可调到 8，机械硬盘建议保持 2-4。
