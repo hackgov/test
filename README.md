@@ -54,7 +54,8 @@
 ```
 crypto.py
 walker.py
-main.py
+encrypt.py      ← 加密器
+decrypt.py      ← 解密器（含完整性校验）
 requirements.txt
 ```
 
@@ -69,7 +70,8 @@ pip install -r requirements.txt
 
 安装完成后验证：
 ```cmd
-python main.py --help
+python encrypt.py --help
+python decrypt.py --help
 ```
 看到命令帮助说明安装成功。
 
@@ -80,7 +82,7 @@ python main.py --help
 ### 场景一：加密备份单个目录
 
 ```cmd
-python main.py encrypt --dest "E:\Backup\enc"  "C:\Users\Alice"
+python encrypt.py --dest "E:\Backup\enc"  "C:\Users\Alice"
 ```
 
 执行后：
@@ -113,7 +115,7 @@ E:\Backup\enc\
 只需在 `--dest` 后面列出所有想要备份的目录，用空格分隔：
 
 ```cmd
-python main.py encrypt --dest "E:\Backup\enc" ^
+python encrypt.py --dest "E:\Backup\enc" ^
     "C:\Users\Alice" ^
     "C:\Work" ^
     "C:\ProgramData\MyApp" ^
@@ -144,7 +146,7 @@ E:\Backup\enc\
 也可以跨盘符同时备份：
 
 ```cmd
-python main.py encrypt --dest "E:\Backup\enc" ^
+python encrypt.py --dest "E:\Backup\enc" ^
     "C:\Users\Alice" ^
     "D:\Projects"
 ```
@@ -165,7 +167,7 @@ E:\Backup\enc\
 ### 场景三：从备份中还原所有文件
 
 ```cmd
-python main.py decrypt "E:\Backup\enc" "E:\Restore"
+python decrypt.py restore "E:\Backup\enc" "E:\Restore"
 ```
 
 执行后：
@@ -188,7 +190,7 @@ E:\Restore\
 定期运行此命令确认备份未损坏、未被篡改：
 
 ```cmd
-python main.py verify "E:\Backup\enc"
+python decrypt.py verify "E:\Backup\enc"
 ```
 
 - 如果全部通过：输出 `All N file(s) passed integrity check.`
@@ -199,8 +201,8 @@ python main.py verify "E:\Backup\enc"
 ### 场景五：指定密码（脚本自动化）
 
 ```cmd
-python main.py encrypt --dest "E:\Backup\enc" --password "你的强密码"  "C:\Users\Alice"  "C:\Work"
-python main.py decrypt "E:\Backup\enc" "E:\Restore" --password "你的强密码"
+python encrypt.py --dest "E:\Backup\enc" --password "你的强密码"  "C:\Users\Alice"  "C:\Work"
+python decrypt.py restore "E:\Backup\enc" "E:\Restore" --password "你的强密码"
 ```
 
 > 警告：命令行密码可能被系统日志记录，建议手动输入。
@@ -210,7 +212,7 @@ python main.py decrypt "E:\Backup\enc" "E:\Restore" --password "你的强密码"
 ### 场景六：调整并行线程数（大量文件时加速）
 
 ```cmd
-python main.py encrypt --dest "E:\Backup\enc" --workers 8  "C:\Users\Alice"  "C:\Work"
+python encrypt.py --dest "E:\Backup\enc" --workers 8  "C:\Users\Alice"  "C:\Work"
 ```
 
 默认4个线程，SSD 可调到 8，机械硬盘建议保持 2-4。
