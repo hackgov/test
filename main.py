@@ -1,14 +1,7 @@
 #!/usr/bin/env python3
 """
-backup-encrypt — encrypt or decrypt a directory tree for secure backup.
-
-Usage examples
---------------
-Encrypt C:\\Users\\Alice into D:\\Backup\\encrypted:
-    python main.py encrypt "C:\\Users\\Alice" "D:\\Backup\\encrypted"
-
-Restore the encrypted backup to D:\\Backup\\restored:
-    python main.py decrypt "D:\\Backup\\encrypted" "D:\\Backup\\restored"
+vault-backup  —  cascade-encrypted directory backup
+Commands:  encrypt | decrypt | verify
 """
 
 import sys
@@ -17,81 +10,130 @@ from pathlib import Path
 
 import click
 
-from walker import encrypt_directory, decrypt_directory
+from crypto import create_session, load_session
+from walker import encrypt_directory, decrypt_directory, verify_directory
 
 
-def _prompt_password(confirm: bool) -> str:
-    pwd = getpass.getpass("Enter backup password: ")
+# ─── helpers ──────────────────────────────────────────────────────────────────
+
+def _get_password(confirm: bool) -> str:
+    pwd = getpass.getpass("Password: ")
     if not pwd:
-        click.echo("Password must not be empty.", err=True)
+        click.echo("Error: password must not be empty.", err=True)
         sys.exit(1)
     if confirm:
-        pwd2 = getpass.getpass("Confirm password: ")
-        if pwd != pwd2:
-            click.echo("Passwords do not match.", err=True)
+        if getpass.getpass("Confirm password: ") != pwd:
+            click.echo("Error: passwords do not match.", err=True)
             sys.exit(1)
     return pwd
 
 
-def _error_handler(path: Path, exc: Exception) -> None:
-    click.echo(f"  [SKIP] {path}: {exc}", err=True)
+def _error_cb(path: Path, exc: Exception) -> None:
+    click.echo(f"  [SKIP] {path.name}: {exc}", err=True)
 
+
+# ─── CLI ──────────────────────────────────────────────────────────────────────
 
 @click.group()
 def cli() -> None:
-    """Backup Encrypt — AES-256 file backup tool."""
+    """Vault-Backup — AES-256-GCM + ChaCha20-Poly1305 cascade backup tool."""
 
 
 @cli.command()
-@click.argument("source", type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.argument("source",      type=click.Path(exists=True, file_okay=False, path_type=Path))
 @click.argument("destination", type=click.Path(path_type=Path))
-@click.option("--password", "-p", default=None, help="Password (omit to be prompted)")
-def encrypt(source: Path, destination: Path, password: str | None) -> None:
+@click.option("--workers", "-w", default=4, show_default=True,
+              help="Parallel worker threads.")
+@click.option("--password", "-p", default=None,
+              help="Password (omit to be prompted securely).")
+def encrypt(source: Path, destination: Path, workers: int, password: str | None) -> None:
     """
-    Encrypt every file in SOURCE and write to DESTINATION.
+    Encrypt every file under SOURCE into DESTINATION.
 
-    Each output file is SOURCE_FILE.enc — the original files are NOT modified.
+    A .vault_session file is created in DESTINATION — keep it together
+    with the encrypted files; it is required for decryption.
+    Original files are never modified.
     """
     if password is None:
-        password = _prompt_password(confirm=True)
+        password = _get_password(confirm=True)
+
+    click.echo("Deriving master key (Argon2id, ~1-2 s) …")
+    master = create_session(password, destination)
+
+    click.echo(f"Source      : {source}")
+    click.echo(f"Destination : {destination}")
+    click.echo(f"Workers     : {workers}")
+    click.echo()
+
+    ok, err = encrypt_directory(source, destination, master, workers, _error_cb)
+
+    click.echo()
+    click.echo(f"Done.  Encrypted: {ok}   Errors: {err}")
+    if err:
+        sys.exit(2)
+
+
+@cli.command()
+@click.argument("source",      type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.argument("destination", type=click.Path(path_type=Path))
+@click.option("--workers", "-w", default=4, show_default=True)
+@click.option("--password", "-p", default=None)
+def decrypt(source: Path, destination: Path, workers: int, password: str | None) -> None:
+    """
+    Decrypt all .vault files in SOURCE into DESTINATION.
+
+    SOURCE must contain the .vault_session file created during encryption.
+    """
+    if password is None:
+        password = _get_password(confirm=False)
+
+    click.echo("Verifying password …")
+    try:
+        master = load_session(password, source)
+    except (FileNotFoundError, ValueError) as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
 
     click.echo(f"Source      : {source}")
     click.echo(f"Destination : {destination}")
     click.echo()
 
-    ok, err = encrypt_directory(source, destination, password, _error_handler)
+    ok, err = decrypt_directory(source, destination, master, workers, _error_cb)
 
     click.echo()
-    click.echo(f"Done. Encrypted: {ok}  Errors: {err}")
+    click.echo(f"Done.  Decrypted: {ok}   Errors: {err}")
     if err:
-        click.echo("Files listed as [SKIP] were not encrypted.", err=True)
         sys.exit(2)
 
 
 @cli.command()
-@click.argument("source", type=click.Path(exists=True, file_okay=False, path_type=Path))
-@click.argument("destination", type=click.Path(path_type=Path))
-@click.option("--password", "-p", default=None, help="Password (omit to be prompted)")
-def decrypt(source: Path, destination: Path, password: str | None) -> None:
+@click.argument("backup_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.option("--workers", "-w", default=4, show_default=True)
+@click.option("--password", "-p", default=None)
+def verify(backup_dir: Path, workers: int, password: str | None) -> None:
     """
-    Decrypt every .enc file in SOURCE and write restored files to DESTINATION.
-
-    Use the same password that was used when encrypting.
+    Verify the integrity of every .vault file in BACKUP_DIR without
+    writing any output — useful to confirm backup is intact.
     """
     if password is None:
-        password = _prompt_password(confirm=False)
+        password = _get_password(confirm=False)
 
-    click.echo(f"Source      : {source}")
-    click.echo(f"Destination : {destination}")
+    click.echo("Verifying password …")
+    try:
+        master = load_session(password, backup_dir)
+    except (FileNotFoundError, ValueError) as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+
     click.echo()
-
-    ok, err = decrypt_directory(source, destination, password, _error_handler)
+    ok, err = verify_directory(backup_dir, master, workers, _error_cb)
 
     click.echo()
-    click.echo(f"Done. Decrypted: {ok}  Errors: {err}")
     if err:
-        click.echo("Files listed as [SKIP] were not decrypted (wrong password or corrupted).", err=True)
+        click.echo(f"INTEGRITY CHECK FAILED.  OK: {ok}   Corrupted/Tampered: {err}", err=True)
         sys.exit(2)
+    else:
+        click.echo(f"All {ok} file(s) passed integrity check.")
 
 
 if __name__ == "__main__":
