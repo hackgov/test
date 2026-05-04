@@ -14,12 +14,18 @@ from tqdm import tqdm
 from crypto import MasterKey, ENCRYPTED_EXT, encrypt_file, decrypt_file
 
 
-def _iter_files(root: Path):
-    for dirpath, _, names in os.walk(root):
+def _iter_files(root: Path,
+                skip: Callable[[Path], bool] | None = None):
+    for dirpath, dirnames, names in os.walk(root, topdown=True):
+        dp = Path(dirpath)
+        if skip:
+            # Prune subdirectories in-place so os.walk never descends into them
+            dirnames[:] = [d for d in dirnames if not skip(dp / d)]
         for name in names:
-            p = Path(dirpath) / name
-            # Never touch the session file itself
-            if name != ".vault_session":
+            if name == ".vault_session":
+                continue
+            p = dp / name
+            if not skip or not skip(p):
                 yield p
 
 
@@ -29,8 +35,9 @@ def encrypt_directory(
     master: MasterKey,
     workers: int = 4,
     on_error: Callable[[Path, Exception], None] | None = None,
+    skip: Callable[[Path], bool] | None = None,
 ) -> tuple[int, int]:
-    files = list(_iter_files(src_dir))
+    files = list(_iter_files(src_dir, skip))
     ok = err = 0
 
     with tqdm(total=len(files), unit="file", desc="Encrypting", dynamic_ncols=True) as bar:

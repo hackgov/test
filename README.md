@@ -79,92 +79,82 @@ python decrypt.py --help
 
 ## 使用教程
 
-### 场景一：加密备份单个目录
+### 场景一：加密整个 C 盘（自动跳过系统目录）
 
 ```cmd
-python encrypt.py --dest "E:\Backup\enc"  "C:\Users\Alice"
+python encrypt.py --dest "E:\Backup\enc"
 ```
 
 执行后：
 1. 提示输入密码（不回显），输入两次确认
-2. 显示"Deriving master key"（约1-2秒，Argon2id计算）
-3. 进度条显示加密进度
-4. 完成后输出成功/失败统计
+2. 显示"正在生成主密钥"（约1-2秒，Argon2id计算）
+3. 自动扫描 C:\ 下所有文件，跳过系统目录
+4. 进度条显示加密进度
+5. 完成后输出成功/失败统计
 
 **重要**：目标目录会生成 `.vault_session` 文件，这是解密所必需的，**务必保留**。
 
+**自动跳过的系统目录（不会被加密）：**
+
+| 目录 | 说明 |
+|------|------|
+| `C:\Windows` | Windows 系统文件 |
+| `C:\Windows.old` | 系统升级残留 |
+| `C:\$Recycle.Bin` | 回收站 |
+| `C:\Recovery` | 系统恢复分区 |
+| `C:\System Volume Information` | 系统卷信息 |
+| `C:\Boot` | 启动文件 |
+| `C:\PerfLogs` | 性能日志 |
+| `C:\MSOCache` | Office 安装缓存 |
+| `pagefile.sys` / `hiberfil.sys` / `swapfile.sys` | 系统虚拟内存文件 |
+
+**加密的目录（示例）：**
 ```
-E:\Backup\enc\
-├── .vault_session              ← 必须保留！
-└── C\
-    └── Users\
-        └── Alice\
-            ├── Desktop\
-            │   ├── report.docx.vault
-            │   └── photo.jpg.vault
-            └── Documents\
-                └── notes.txt.vault
-```
-
-每个原始文件对应一个 `.vault` 文件，原始文件**完全不受影响**。
-
----
-
-### 场景二：一次性加密多个指定目录
-
-只需在 `--dest` 后面列出所有想要备份的目录，用空格分隔：
-
-```cmd
-python encrypt.py --dest "E:\Backup\enc" ^
-    "C:\Users\Alice" ^
-    "C:\Work" ^
-    "C:\ProgramData\MyApp" ^
-    "C:\Program Files\ImportantSoftware"
-```
-
-（`^` 是 Windows cmd 的换行符，也可以写成一行）
-
-备份目录结构会按原始路径自动分层，互不冲突：
-
-```
-E:\Backup\enc\
-├── .vault_session
-└── C\
-    ├── Users\
-    │   └── Alice\
-    │       ├── Desktop\...
-    │       └── Documents\...
-    ├── Work\
-    │   ├── project1\...
-    │   └── project2\...
-    ├── ProgramData\
-    │   └── MyApp\...
-    └── Program Files\
-        └── ImportantSoftware\...
-```
-
-也可以跨盘符同时备份：
-
-```cmd
-python encrypt.py --dest "E:\Backup\enc" ^
-    "C:\Users\Alice" ^
-    "D:\Projects"
-```
-
-结构变为：
-
-```
-E:\Backup\enc\
-├── .vault_session
-├── C\
-│   └── Users\Alice\...
-└── D\
-    └── Projects\...
+C:\Users\          ← 所有用户文件
+C:\Program Files\  ← 已安装软件
+C:\ProgramData\    ← 应用数据
+C:\Work\           ← 自定义目录
+...（其余非系统目录）
 ```
 
 ---
 
-### 场景三：从备份中还原所有文件
+### 场景二：加密其他盘符
+
+```cmd
+python encrypt.py --dest "E:\Backup\enc" --drive D
+```
+
+---
+
+### 场景三：预览将被跳过/加密的目录（不执行加密）
+
+正式加密前可先查看哪些目录会被处理：
+
+```cmd
+python encrypt.py --dest "E:\Backup\enc" --show-skipped
+```
+
+输出示例：
+```
+扫描根目录: C:\
+以下顶层目录将被跳过（系统目录）：
+  [跳过] C:\$Recycle.Bin
+  [跳过] C:\Recovery
+  [跳过] C:\System Volume Information
+  [跳过] C:\Windows
+
+以下顶层目录将被加密：
+  [加密] C:\Program Files
+  [加密] C:\Program Files (x86)
+  [加密] C:\ProgramData
+  [加密] C:\Users
+  [加密] C:\Work
+```
+
+---
+
+### 场景四：从备份中还原所有文件
 
 ```cmd
 python decrypt.py restore "E:\Backup\enc" "E:\Restore"
@@ -201,7 +191,7 @@ python decrypt.py verify "E:\Backup\enc"
 ### 场景五：指定密码（脚本自动化）
 
 ```cmd
-python encrypt.py --dest "E:\Backup\enc" --password "你的强密码"  "C:\Users\Alice"  "C:\Work"
+python encrypt.py --dest "E:\Backup\enc" --password "你的强密码"
 python decrypt.py restore "E:\Backup\enc" "E:\Restore" --password "你的强密码"
 ```
 
@@ -212,7 +202,7 @@ python decrypt.py restore "E:\Backup\enc" "E:\Restore" --password "你的强密�
 ### 场景六：调整并行线程数（大量文件时加速）
 
 ```cmd
-python encrypt.py --dest "E:\Backup\enc" --workers 8  "C:\Users\Alice"  "C:\Work"
+python encrypt.py --dest "E:\Backup\enc" --workers 8
 ```
 
 默认4个线程，SSD 可调到 8，机械硬盘建议保持 2-4。
