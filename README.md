@@ -51,33 +51,55 @@
 
 | 文件 | 作用 |
 |------|------|
-| `encrypt.py` | 加密器 |
-| `decrypt.py` | 解密器（含完整性校验） |
+| `encrypt.py` | 加密器源码 |
+| `decrypt.py` | 解密器源码（含完整性校验） |
 | `crypto.py` | 底层加密核心（勿删） |
 | `walker.py` | 目录遍历引擎（勿删） |
 | `requirements.txt` | Python 依赖列表 |
+| `build.bat` | 一键构建 exe（Windows） |
 
 ---
 
-## 环境要求
+## 方式一：直接使用 exe（推荐，无需安装 Python）
+
+### 构建 exe
+
+在**任意一台已安装 Python 的 Windows 电脑**上执行一次，生成两个独立 exe：
+
+```cmd
+build.bat
+```
+
+完成后在 `dist\` 目录得到：
+```
+dist\
+├── vault-encrypt.exe   ← 加密器
+└── vault-decrypt.exe   ← 解密器
+```
+
+将这两个 exe 复制到目标机器的任意目录（如 `C:\vault\`），**无需安装 Python 或任何依赖**，双击或命令行直接运行。
+
+---
+
+## 方式二：直接运行 Python 源码
+
+### 环境要求
 
 - Python 3.11+
 - Windows / macOS / Linux
 
----
+### 安装步骤
 
-## 安装步骤
-
-### 第一步：安装 Python
+#### 第一步：安装 Python
 
 从 https://python.org 下载并安装 Python 3.11 或更高版本。
 Windows 安装时勾选 **"Add Python to PATH"**。
 
-### 第二步：放置工具文件
+#### 第二步：放置工具文件
 
 将所有 `.py` 文件和 `requirements.txt` 放到同一目录，例如 `C:\vault\`。
 
-### 第三步：安装依赖
+#### 第三步：安装依赖
 
 ```cmd
 cd C:\vault
@@ -94,9 +116,19 @@ python decrypt.py --help
 
 ## 使用教程
 
+> 以下命令 exe 与 Python 源码用法完全一致，替换前缀即可：
+> - exe：`vault-encrypt`  /  `vault-decrypt`
+> - 源码：`python encrypt.py`  /  `python decrypt.py`
+
+---
+
 ### 场景一：加密整个 C 盘
 
 ```cmd
+:: exe 用法
+vault-encrypt
+
+:: 源码用法
 python encrypt.py
 ```
 
@@ -118,7 +150,7 @@ python encrypt.py
 ### 场景二：加密其他盘符
 
 ```cmd
-python encrypt.py --drive D
+vault-encrypt --drive D
 ```
 
 ---
@@ -126,7 +158,7 @@ python encrypt.py --drive D
 ### 场景三：预览将跳过/加密的顶层目录（不执行加密）
 
 ```cmd
-python encrypt.py --show-skipped
+vault-encrypt --show-skipped
 ```
 
 输出示例：
@@ -153,14 +185,14 @@ python encrypt.py --show-skipped
 ### 场景四：解密还原
 
 ```cmd
-python decrypt.py restore
+vault-decrypt restore
 ```
 
 将 `C:\` 下所有 `.vault` 文件就地解密，还原为原始文件，`.vault` 文件删除。
 
 解密其他盘符：
 ```cmd
-python decrypt.py restore --drive D
+vault-decrypt restore --drive D
 ```
 
 ---
@@ -170,7 +202,7 @@ python decrypt.py restore --drive D
 加密完成后或定期运行，确认文件未损坏、未被篡改：
 
 ```cmd
-python decrypt.py verify
+vault-decrypt verify
 ```
 
 - 全部通过：`全部 N 个文件校验通过。`
@@ -181,19 +213,19 @@ python decrypt.py verify
 ### 场景六：调整并行线程数
 
 ```cmd
-python encrypt.py --workers 8
-python decrypt.py restore --workers 8
+vault-encrypt --workers 8
+vault-decrypt restore --workers 8
 ```
 
 默认 4 线程。SSD 可调到 8，机械硬盘建议 2-4。
 
 ---
 
-### 场景七：脚本自动化（指定密码）
+### 场景七：指定密码（自动化场景）
 
 ```cmd
-python encrypt.py --password "你的强密码"
-python decrypt.py restore --password "你的强密码"
+vault-encrypt --password "你的强密码"
+vault-decrypt restore --password "你的强密码"
 ```
 
 > 注意：命令行密码可能被系统日志记录，建议交互式输入。
